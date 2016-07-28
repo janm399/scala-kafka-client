@@ -1,12 +1,13 @@
 package cakesolutions.kafka.akka
 
 import akka.actor.ActorSystem
-import cakesolutions.kafka.akka.KafkaConsumerActor.Subscribe.AutoPartition
+import cakesolutions.kafka.akka.KafkaConsumerActor.Subscribe.{AutoPartition, ManualOffset, ManualPartition}
 import cakesolutions.kafka.akka.KafkaConsumerActor.{Confirm, Subscribe, Unsubscribe}
 import cakesolutions.kafka.testkit.TestUtils
 import cakesolutions.kafka.{KafkaConsumer, KafkaProducer, KafkaProducerRecord, KafkaTopicPartition}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.kafka.clients.consumer.OffsetResetStrategy
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import org.slf4j.LoggerFactory
 
@@ -49,9 +50,8 @@ class KafkaConsumerActorSpec(system_ : ActorSystem) extends KafkaIntSpec(system_
   def actorConfFromConfig: KafkaConsumerActor.Conf =
     KafkaConsumerActor.Conf(ConfigFactory.parseString(
       s"""
-         | schedule.interval = 3000 milliseconds
-         | unconfirmed.timeout = 3000 milliseconds
-         | buffer.size = 8
+         | schedule.interval = 1 second
+         | unconfirmed.timeout = 3 seconds
         """.stripMargin)
     )
 
@@ -62,10 +62,8 @@ class KafkaConsumerActorSpec(system_ : ActorSystem) extends KafkaIntSpec(system_
          | group.id = "${TestUtils.randomString(5)}"
          | enable.auto.commit = false
          | auto.offset.reset = "earliest"
-         | topics = ["$topic"]
-         | schedule.interval = 3000 milliseconds
-         | unconfirmed.timeout = 3000 milliseconds
-         | buffer.size = 8
+         | schedule.interval = 1 second
+         | unconfirmed.timeout = 3 seconds
         """.  stripMargin
     )
 
@@ -82,6 +80,7 @@ class KafkaConsumerActorSpec(system_ : ActorSystem) extends KafkaIntSpec(system_
 
           val consumer = KafkaConsumerActor(consumerConfig, actorConf, testActor)
           consumer.subscribe(AutoPartition(Seq(topic)))
+          consumer.subscribe(ManualOffset(Offsets(Map()))
 
           val rs = expectMsgClass(30.seconds, classOf[ConsumerRecords[String, String]])
           consumer.confirm(rs.offsets)
