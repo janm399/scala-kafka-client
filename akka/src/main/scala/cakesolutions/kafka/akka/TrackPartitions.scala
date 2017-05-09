@@ -1,6 +1,6 @@
 package cakesolutions.kafka.akka
 
-import java.util.{Collection => JCollection}
+import java.util.{Collection ⇒ JCollection}
 
 import akka.actor.ActorRef
 import org.apache.kafka.clients.consumer.{ConsumerRebalanceListener, KafkaConsumer}
@@ -8,6 +8,8 @@ import org.apache.kafka.common.TopicPartition
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
 sealed trait TrackPartitions extends ConsumerRebalanceListener {
   def isRevoked: Boolean
@@ -91,8 +93,8 @@ private final class TrackPartitionsCommitMode(consumer: KafkaConsumer[_, _], con
   */
 private final class TrackPartitionsManualOffset(
   consumer: KafkaConsumer[_, _], consumerActor: ActorRef,
-  assignedListener: List[TopicPartition] => Offsets,
-  revokedListener: List[TopicPartition] => Unit) extends TrackPartitions {
+  assignedListener: List[TopicPartition] => Future[Offsets],
+  revokedListener: List[TopicPartition] => Future[Unit])(implicit executor: ExecutionContext) extends TrackPartitions {
 
   private val log = LoggerFactory.getLogger(getClass)
 
@@ -117,13 +119,19 @@ private final class TrackPartitionsManualOffset(
       offsets.map { case (tp, _) => tp }.toList
 
     def assign(partitions: List[TopicPartition]) = {
-      val offsets = assignedListener(partitions)
-      for {
-        partition <- partitions
-        offset <- offsets.get(partition)
-      } {
-        log.info(s"Seeking partition: [{}] to offset [{}]", partition, offset)
-        consumer.seek(partition, offset)
+      assignedListener(partitions).onComplete {
+        case Success(offsets) ⇒
+          for {
+            partition <- partitions
+            offset <- offsets.get(partition)
+          } {
+            log.info("Seeking partition: [{}] to offset [{}]", partition, offset)
+            consumer.seek(partition, offset)
+          }
+        case Failure(ex) ⇒
+          log.error("Did not load offsets {}; falling back on latest", ex)
+          // TODO: What now; earliest?
+          consumer.seekToEnd(partitions.asJava)
       }
     }
 
@@ -141,10 +149,14 @@ private final class TrackPartitionsManualOffset(
       consumerActor ! KafkaConsumerActor.RevokeReset
 
       // Invoke client callback to notify revocation of all existing partitions.
-      revokedListener(offsetsToTopicPartitions(_offsets))
+      revokedListener(offsetsToTopicPartitions(_offsets)).onComplete {
+        case Success(_) ⇒
+          // Invoke client callback to notify the new assignments and seek to the provided offsets.
+          assign(partitions.asScala.toList)
+        case Failure(_) ⇒
+          // TODO: What now?
+      }
 
-      // Invoke client callback to notify the new assignments and seek to the provided offsets.
-      assign(partitions.asScala.toList)
     }
   }
 

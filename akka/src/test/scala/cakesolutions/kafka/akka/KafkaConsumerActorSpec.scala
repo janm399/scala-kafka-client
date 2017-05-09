@@ -9,6 +9,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.kafka.clients.consumer.OffsetResetStrategy
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -182,8 +183,8 @@ class KafkaConsumerActorSpec(system_ : ActorSystem) extends KafkaIntSpec(system_
 
     val consumer = system.actorOf(KafkaConsumerActor.props(consumerConf, KafkaConsumerActor.Conf(), testActor))
     consumer ! Subscribe.AutoPartitionWithManualOffset(Seq(topic),
-      tps => Offsets(tps.map { tp => tp -> 0l }.toMap),
-      _ => ())
+      tps => Future.successful(Offsets(tps.map { tp => tp -> 0l }.toMap)),
+      _ => Future.successful(()))
 
     val rs = expectMsgClass(30.seconds, classOf[ConsumerRecords[String, String]])
     consumer ! Confirm(rs.offsets)

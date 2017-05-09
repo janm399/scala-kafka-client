@@ -9,6 +9,7 @@ import org.apache.kafka.clients.consumer.OffsetResetStrategy
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 /**
@@ -81,7 +82,7 @@ class AutoPartitionConsumerWithManualOffset(
       log.info(s"Received [$key,$value]")
     }
 
-  private def assignedListener(tps: List[TopicPartition]): Offsets = {
+  private def assignedListener(tps: List[TopicPartition]): Future[Offsets] = {
     log.info("Partitions have been assigned" + tps.toString())
 
     // Should load the offsets from a persistent store and any related state
@@ -90,13 +91,13 @@ class AutoPartitionConsumerWithManualOffset(
     }.toMap
 
     // Return the required offsets for the assigned partitions
-    Offsets(offsetMap)
+    Future.successful(Offsets(offsetMap))
   }
 
-  private def revokedListener(tps: List[TopicPartition]): Unit = {
+  private def revokedListener(tps: List[TopicPartition]): Future[Unit] = {
     log.info("Partitions have been revoked" + tps.toString())
     // Opportunity to clear any state for the revoked partitions
-    ()
+    Future.successful(())
   }
 }
 

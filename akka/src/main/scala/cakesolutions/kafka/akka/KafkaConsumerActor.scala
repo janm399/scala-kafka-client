@@ -12,6 +12,7 @@ import org.apache.kafka.common.errors.WakeupException
 import org.apache.kafka.common.serialization.Deserializer
 
 import scala.collection.JavaConverters._
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe.TypeTag
 import scala.util.{Failure, Success, Try}
@@ -119,8 +120,8 @@ object KafkaConsumerActor {
       */
     final case class AutoPartitionWithManualOffset(
       topics: Iterable[String],
-      assignedListener: List[TopicPartition] => Offsets,
-      revokedListener: List[TopicPartition] => Unit
+      assignedListener: List[TopicPartition] => Future[Offsets],
+      revokedListener: List[TopicPartition] => Future[Unit]
     ) extends Subscribe
 
     /**
@@ -665,6 +666,7 @@ private final class KafkaConsumerActorImpl[K: TypeTag, V: TypeTag](
 
     case Subscribe.AutoPartitionWithManualOffset(topics, assignedListener, revokedListener) =>
       log.info(s"Subscribing in auto partition assignment with manual offset mode to topics [{}].", topics.mkString(","))
+      import context.dispatcher
       trackPartitions = new TrackPartitionsManualOffset(consumer, context.self, assignedListener, revokedListener)
       consumer.subscribe(topics.toList.asJava, trackPartitions)
 
